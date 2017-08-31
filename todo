@@ -1,0 +1,9 @@
+- build simple matcher, verify it with a spec
+- implement parser for sample data, run test against it;
+- print out the `results.txt`
+
+-? scalacheck property testing?
+-? load testing?  (make whole thing stream based to minimize mem footprint)
+-
+
+
