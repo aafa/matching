@@ -1,6 +1,9 @@
 - build simple matcher, verify it with a spec
+- concurrency tests - no money\assets should get lost in a process
 - implement parser for sample data, run test against it;
 - print out the `results.txt`
+
+- try partial (multiple orders) transactions
 
 -? scalacheck property testing?
 -? load testing?  (make whole thing stream based to minimize mem footprint)

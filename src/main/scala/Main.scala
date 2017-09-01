@@ -1,112 +1,9 @@
 import java.util.Currency
 
 import scala.collection.concurrent.TrieMap
+import scala.collection.immutable
+import scala.concurrent.stm._
 import scala.util.{Failure, Success, Try}
-
-sealed trait FailedOperation extends Exception
-case class NotEnoughAssets() extends FailedOperation // todo detailed message
-case class NotEnoughFunds() extends FailedOperation // todo detailed message
-
-object Helpers {
-  implicit class TrieHelper[Key, Value](trie: TrieMap[Key, Value]) {
-    def tryUpdate(key: Key)(update: Value => Try[Value]): Try[TrieMap[Key, Value]] =
-      trie.get(key) match {
-        case Some(value) =>
-          update(value) match {
-            case Failure(exception) => Failure(exception)
-            case Success(updatedValue) =>
-              trie.put(key, updatedValue)
-              Success(trie)
-          }
-        case None =>
-          Failure(new IllegalArgumentException)
-      }
-
-    def tryCreateOrUpdate(key: Key)(update: Value => Try[Value])(
-        create: => Value): Try[TrieMap[Key, Value]] = {
-      trie.get(key) match {
-        case Some(_) => tryUpdate(key)(update)
-        case None =>
-          trie.put(key, create)
-          Success(trie)
-      }
-    }
-
-  }
-}
-
-object Model {
-  import Helpers._
-
-  sealed trait OrderType {
-    def opposite: OrderType = this match {
-      case Buy  => Sell
-      case Sell => Buy
-    }
-  }
-
-  case object Buy  extends OrderType
-  case object Sell extends OrderType
-
-  type ClientKey = String
-  type Money     = Long
-  type OrderKey  = (Asset, Money)
-
-  sealed trait Asset
-  case object A extends Asset
-  case object B extends Asset
-  case object C extends Asset
-  case object D extends Asset
-
-  case class Client(name: ClientKey, // gonna be indexed field
-                    money: Money,
-                    assets: TrieMap[Asset, Int],
-  ) {
-    def update(order: Order): Try[Client] = {
-      for {
-        updatedMoney <- order.adjustMoney(money, order.totalPrice)
-        updatedAssets <- assets.tryCreateOrUpdate(order.asset)(qty =>
-          order.adjustAssets(qty, order.qty))(order.qty)
-      } yield this.copy(money = updatedMoney, assets = updatedAssets)
-    }
-  }
-
-  case class Order(clientName: ClientKey,
-                   orderType: OrderType,
-                   asset: Asset,
-                   price: Money,
-                   qty: Int) {
-    def key: (Asset, Money) = (asset, price)
-    def totalPrice: Money   = price * qty
-
-    sealed trait GainOrSpend
-    case object Gain extends GainOrSpend
-    case object Spend extends GainOrSpend
-
-    def tryAdjust[T](total: T, adjustment: T, gs: GainOrSpend, failure: FailedOperation)(implicit ev: Numeric[T]): Try[T] =
-      gs match {
-        case Spend =>
-          if (ev.gt(ev.minus(total, adjustment), ev.zero)) { // todo import ops._
-            Success(ev.minus(total, adjustment))
-          } else {
-            Failure(failure)
-          }
-        case Gain => Success(ev.plus(total, adjustment))
-      }
-
-    def adjustMoney(total: Money, adjustment: Money): Try[Money] = this.orderType match {
-      case Buy => tryAdjust(total, adjustment, Spend, NotEnoughFunds())
-      case Sell => tryAdjust(total, adjustment, Gain, NotEnoughFunds())
-    }
-
-    def adjustAssets(total: Int, adjustment: Int): Try[Int] = this.orderType match {
-      case Buy => tryAdjust(total, adjustment, Gain, NotEnoughAssets())
-      case Sell => tryAdjust(total, adjustment, Spend, NotEnoughAssets())
-    }
-  }
-
-
-}
 
 object Matcher {
   import Helpers._
@@ -119,9 +16,17 @@ object Matcher {
   val ordersQueue: OrdersMap = TrieMap.empty[OrderKey, Order]
 
   implicit class ClientsHelper(clients: ClientsMap) {
-    def transactOrdersPair(order1: Order, order2: Order): Try[ClientsMap] = {
-      clients.tryUpdate(order1.clientName)(_.update(order1))
-      clients.tryUpdate(order2.clientName)(_.update(order2))
+    def transactOrders(t: Transaction): Try[Transaction] = {
+      atomic { implicit trx =>
+        val triedClientUpdates: Try[(ClientKey, Client)] = t.orders.map { o =>
+          clients.tryUpdate(o.clientName)(_.update(o))
+        }.reduce(_ orElse _)
+
+        triedClientUpdates match {
+          case Failure(exception) => Failure(exception)
+          case Success(_) => Success(t)
+        }
+      }
     }
   }
 
@@ -144,7 +49,9 @@ object Matcher {
         case Some(matchingOrder) =>
           ordersQueue.modify(matchingOrder)
           (cm: ClientsMap) =>
-            cm.transactOrdersPair(matchingOrder, inputOrder)
+            {
+              cm.transactOrders(Transaction(Vector(matchingOrder, inputOrder))).fold(Failure(_), _ => Success(cm))
+            }
         case None =>
           ordersQueue.put(inputOrder.key, inputOrder)
           (cm: ClientsMap) =>

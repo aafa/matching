@@ -13,8 +13,12 @@ scalacOptions ++= Seq(
   , "-language:postfixOps"
 )
 
+val cats = "1.0.0-MF"
+
 libraryDependencies ++= Seq(
   "co.fs2" %% "fs2-core" % "0.9.6",
+  "org.typelevel" %% "cats-core" % cats,
+  "org.scala-stm" %% "scala-stm" % "0.8",
   "org.scalatest" %% "scalatest" % "3.0.1" % "test"
 )
 
