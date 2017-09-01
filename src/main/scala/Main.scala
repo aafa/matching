@@ -1,31 +1,24 @@
-import java.util.Currency
-
 import scala.collection.concurrent.TrieMap
-import scala.collection.immutable
 import scala.concurrent.stm._
-import scala.util.{Failure, Success, Try}
+import scala.util.Try
 
 object Matcher {
-  import Helpers._
   import Model._
 
-  type ClientsMap = TrieMap[ClientKey, Client]
+  type ClientsMap = Map[ClientKey, Client]
   type OrdersMap  = TrieMap[OrderKey, Order]
 
-  val clients: ClientsMap    = TrieMap.empty[ClientKey, Client]
+  val clients: ClientsMap    = Map.empty[ClientKey, Client]
   val ordersQueue: OrdersMap = TrieMap.empty[OrderKey, Order]
 
   implicit class ClientsHelper(clients: ClientsMap) {
-    def transactOrders(t: Transaction): Try[Transaction] = {
+    def transactOrders(t: Transaction): Try[Transaction] = Try {
       atomic { implicit trx =>
-        val triedClientUpdates: Try[(ClientKey, Client)] = t.orders.map { o =>
-          clients.tryUpdate(o.clientName)(_.update(o))
-        }.reduce(_ orElse _)
-
-        triedClientUpdates match {
-          case Failure(exception) => Failure(exception)
-          case Success(_) => Success(t)
+        t.orders.foreach { o =>
+          val client = clients(o.clientName)
+          client.update(o)
         }
+        t
       }
     }
   }
@@ -42,26 +35,22 @@ object Matcher {
       ordersQueue.remove(order.key) // todo ??? accumulative - OR + to the order amount
   }
 
-  def process(orders: Vector[Order], clients: ClientsMap): Try[ClientsMap] = {
-    def transactions: Seq[ClientsMap => Try[ClientsMap]] = orders.map { inputOrder: Order =>
-      val maybeMatchingOrder = ordersQueue.findMatching(inputOrder)
-      maybeMatchingOrder match {
-        case Some(matchingOrder) =>
-          ordersQueue.modify(matchingOrder)
-          (cm: ClientsMap) =>
-            {
-              cm.transactOrders(Transaction(Vector(matchingOrder, inputOrder))).fold(Failure(_), _ => Success(cm))
-            }
-        case None =>
-          ordersQueue.put(inputOrder.key, inputOrder)
-          (cm: ClientsMap) =>
-            Success(cm) // effectively no-op
+  def process(orders: Vector[Order], clients: ClientsMap): (Vector[Try[Transaction]], ClientsMap) = {
+    def processTransactions(cm: ClientsMap): Vector[Try[Transaction]] =
+      orders.foldLeft(Vector.empty[Try[Transaction]]) {
+        case (triedTransactions: Vector[Try[Transaction]], inputOrder: Order) =>
+          val maybeMatchingOrder = ordersQueue.findMatching(inputOrder)
+          maybeMatchingOrder match {
+            case Some(matchingOrder) =>
+              ordersQueue.modify(matchingOrder)
+              triedTransactions :+ cm.transactOrders(Transaction(matchingOrder, inputOrder))
+            case None =>
+              ordersQueue.put(inputOrder.key, inputOrder)
+              triedTransactions
+          }
       }
-    }
 
-    transactions.foldLeft(Try(clients))(
-      (tryClients: Try[ClientsMap], mapToTriedMap: (ClientsMap) => Try[ClientsMap]) =>
-        tryClients.flatMap(mapToTriedMap))
+    (processTransactions(clients), clients)
   }
 }
 

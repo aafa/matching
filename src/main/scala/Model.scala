@@ -1,14 +1,12 @@
-import scala.collection.concurrent.TrieMap
-import scala.util.{Failure, Success, Try}
-import scala.concurrent.stm._
-import scala.concurrent.stm.Txn.UncaughtExceptionCause
+import Model.Order
 
-sealed trait FailedOperation extends Exception
-case class NotEnoughAssets() extends FailedOperation // todo detailed message
-case class NotEnoughFunds()  extends FailedOperation // todo detailed message
+import scala.concurrent.stm._
+
+sealed class FailedOperation(m: String) extends Exception(m)
+case class NotEnoughAssets(order: Order) extends FailedOperation(s"${order.clientName} has not enough assets")
+case class NotEnoughFunds(order: Order)  extends FailedOperation(s"${order.clientName} has not enough funds")
 
 object Model {
-  import Helpers._
 
   sealed trait OrderType {
     def opposite: OrderType = this match {
@@ -32,25 +30,47 @@ object Model {
 
   case class Client(name: ClientKey, // gonna be indexed field
                     money: Ref[Money],
-                    assets: TrieMap[Asset, Ref[Long]],
+                    assets: Ref[Map[Asset, Long]],
   ) {
-    def update(order: Order)(implicit txn: InTxn): Try[Client] = {
-      for {
-        updatedMoney <- order.adjustMoney(money, order.totalPrice)
-        _ <- assets.tryCreateOrUpdate(order.asset)(qty => order.adjustAssets(qty, order.qty))(
-          Ref(order.qty))
-      } yield this.copy(money = updatedMoney, assets = assets)
+    def update(order: Order)(implicit txn: InTxn): Unit = {
+      {
+        this.assets.transform { assetToLong: Map[Asset, Money] =>
+          {
+            def adjust(value: Long, qty: Long): Long = order.orderType match {
+              case Buy => value + qty
+              case Sell =>
+                if (value - qty < 0) throw NotEnoughAssets(order)
+                value - qty
+            }
+
+            assetToLong.get(order.asset) match {
+              case Some(value) => assetToLong + (order.asset -> adjust(value, order.qty))
+              case None        => assetToLong + (order.asset -> order.qty)
+            }
+          }
+        }
+
+        order.orderType match {
+          case Buy =>
+            this.money() -= order.totalPrice
+            if (this.money() < 0) throw NotEnoughFunds(order)
+          case Sell => this.money() += order.totalPrice
+        }
+      }
     }
 
     override def toString: ClientKey = atomic { implicit txn =>
-      s"$name has ${money()} and ${assets.map {
-        case (asset: Asset, value: Ref[Money]) => s"$asset(${value()})"
+      s"$name has ${money()} and ${assets().map {
+        case (asset: Asset, value: Money) => s"$asset($value)"
       }}"
     }
   }
 
   case class Transaction(orders: Vector[Order]) {
     // todo check if all orders are matched and transaction is valid again?
+  }
+
+  object Transaction{
     def apply(orders: Order*): Transaction = Transaction(Vector(orders: _*))
   }
 
@@ -62,34 +82,6 @@ object Model {
     def key: OrderKey     = (asset, price)
     def totalPrice: Money = price * qty
 
-    sealed trait GainOrSpend
-    case object Gain  extends GainOrSpend
-    case object Spend extends GainOrSpend
-
-    def tryAdjust(total: Ref[Long], adjustment: Long, gs: GainOrSpend, failure: FailedOperation)(
-        implicit txn: InTxn): Try[Ref[Long]] =
-      gs match {
-        case Spend =>
-          if ((total() - adjustment) > 0) {
-            Success(Ref(total() - adjustment))
-          } else { // here we both rolling back failed txn and collecting failed state to collect it later
-            Txn.rollback(UncaughtExceptionCause(failure))
-            Failure(failure)
-          }
-        case Gain => Success(Ref(total() + adjustment))
-      }
-
-    def adjustMoney(total: Ref[Money], adjustment: Money)(implicit txn: InTxn): Try[Ref[Money]] =
-      this.orderType match {
-        case Buy  => tryAdjust(total, adjustment, Spend, NotEnoughFunds())
-        case Sell => tryAdjust(total, adjustment, Gain, NotEnoughFunds())
-      }
-
-    def adjustAssets(total: Ref[Long], adjustment: Long)(implicit txn: InTxn): Try[Ref[Long]] =
-      this.orderType match {
-        case Buy  => tryAdjust(total, adjustment, Gain, NotEnoughAssets())
-        case Sell => tryAdjust(total, adjustment, Spend, NotEnoughAssets())
-      }
   }
 
 }
