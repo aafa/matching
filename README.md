@@ -87,7 +87,7 @@ C9       3634    281     274     119     379
 
 ```
 
-For full logs see [results/solver.log](results/solver.log)
+For full logs see [results/solver.log](results/solver.txt)
 
 #### TODO
 - Implement partial orders (from left-over orders we can clearly see that we haven't covered that yet)
