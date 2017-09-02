@@ -1,5 +1,6 @@
 import Model.Order
 
+import scala.collection.concurrent.TrieMap
 import scala.concurrent.stm._
 
 sealed class FailedOperation(m: String) extends Exception(m)
@@ -30,6 +31,9 @@ object Model {
   type ClientKey = String
   type Money     = Long
   type OrderKey  = (Asset, Money)
+
+  type ClientsMap = Map[ClientKey, Client]
+  type OrdersMap  = TrieMap[OrderKey, Order]
 
   sealed trait Asset
   case object A extends Asset

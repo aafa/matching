@@ -1,10 +1,8 @@
-import scala.collection.concurrent.TrieMap
 import scala.concurrent.stm.atomic
 import scala.util.Try
 
-object Matcher {
+class Matcher(val db: Db) {
   import Model._
-  import Db._
 
   implicit class ClientsHelper(clients: ClientsMap) {
     def transactOrders(t: Transaction): Try[Transaction] = Try {
@@ -27,20 +25,20 @@ object Matcher {
         .filter(_.qty == order.qty) // todo > if selling, otherwise if buying
 
     def modify(order: Order): Unit =
-      ordersQueue.remove(order.key) // todo ??? accumulative - OR + to the order amount
+      db.ordersQueue.remove(order.key) // todo ??? accumulative - OR + to the order amount
   }
 
   def process(orders: Vector[Order], clients: ClientsMap): (Vector[Try[Transaction]], ClientsMap) = {
     def processTransactions(cm: ClientsMap): Vector[Try[Transaction]] =
       orders.foldLeft(Vector.empty[Try[Transaction]]) {
         case (triedTransactions: Vector[Try[Transaction]], inputOrder: Order) =>
-          val maybeMatchingOrder = ordersQueue.findMatching(inputOrder)
+          val maybeMatchingOrder = db.ordersQueue.findMatching(inputOrder)
           maybeMatchingOrder match {
             case Some(matchingOrder) =>
-              ordersQueue.modify(matchingOrder)
+              db.ordersQueue.modify(matchingOrder)
               triedTransactions :+ cm.transactOrders(Transaction(matchingOrder, inputOrder))
             case None =>
-              ordersQueue.put(inputOrder.key, inputOrder)
+              db.ordersQueue.put(inputOrder.key, inputOrder)
               triedTransactions
           }
       }

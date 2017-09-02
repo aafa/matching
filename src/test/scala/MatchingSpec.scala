@@ -1,5 +1,4 @@
 import org.scalatest.{FunSpec, MustMatchers}
-import Matcher._
 import Model._
 import matching._
 
@@ -8,6 +7,7 @@ import scala.concurrent.stm._
 import scala.util.{Failure, Success, Try}
 
 class MatchingSpec extends FunSpec with MustMatchers {
+  val matcher: Matcher = new Matcher(new Db {})
 
   def genClients = Map(
     "C1" -> Client("C1", 1000.ref, Asset(a = 10,b = 30).ref),
@@ -26,9 +26,7 @@ class MatchingSpec extends FunSpec with MustMatchers {
       Order("C1", Buy, A, 10, 5), // not gonna be matched
     )
 
-    val triedTransactions = Matcher.process(orders, clientMap)
-    println(triedTransactions)
-    println(clientMap)
+    val triedTransactions = matcher.process(orders, clientMap)
 
     clientMap.toString() must === (Map(
       "C1" -> Client("C1", (1000 - 100).ref, Asset(a = 20,b = 30).ref),
@@ -54,7 +52,7 @@ class MatchingSpec extends FunSpec with MustMatchers {
       Order("C2", Sell, A, 1000, 5),
     )
 
-    val (triedTransactions, clientMap) = Matcher.process(orders, genClients)
+    val (triedTransactions, clientMap) = matcher.process(orders, genClients)
     clientMap.toString() must === (genClients.toString()) // unchanged \ rollbacked
     triedTransactions must === (Seq(Failure(NotEnoughFunds(orders.head))))
   }
@@ -65,7 +63,7 @@ class MatchingSpec extends FunSpec with MustMatchers {
       Order("C2", Sell, A, 1, 500),
     )
 
-    val (triedTransactions, clientMap) = Matcher.process(orders, genClients)
+    val (triedTransactions, clientMap) = matcher.process(orders, genClients)
 
     triedTransactions must === (Seq(Failure(NotEnoughAssets(orders.last))))
     clientMap.toString() must === (genClients.toString()) // unchanged \ rollbacked
@@ -79,7 +77,7 @@ class MatchingSpec extends FunSpec with MustMatchers {
       Order("C2", Sell, A, 1000, 5),
     )
 
-    val (triedTransactions, clientMap) = Matcher.process(orders, genClients)
+    val (triedTransactions, clientMap) = matcher.process(orders, genClients)
     triedTransactions must === (Seq(
       Success(Transaction(orders.head, orders.tail.head)),
       Failure(NotEnoughFunds(Order("C1", Buy, A, 1000, 5)))))

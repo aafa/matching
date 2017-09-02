@@ -6,14 +6,9 @@ import matching._
 
 import scala.collection.concurrent.TrieMap
 
-object Db {
-
-  type ClientsMap = Map[ClientKey, Client]
-  type OrdersMap  = TrieMap[OrderKey, Order]
-
+trait Db {
   val clients: ClientsMap    = Map.empty[ClientKey, Client]
   val ordersQueue: OrdersMap = TrieMap.empty[OrderKey, Order]
-
 }
 
 object TsvParser{
@@ -30,21 +25,18 @@ object TsvParser{
         .map(s => s.split("\t").toList)
   }
 
-  def clients(fileName: String): Result[(ClientKey, Client)] =
-    tsvLines(fileName)
+  def clients: Result[Client] =
+    tsvLines("clients.txt")
       .collect {
         case name :: money :: a :: b :: c :: d :: Nil =>
           Client(name, money.toLong.ref, Asset(a.toLong,b.toLong,c.toLong,d.toLong).ref)
-      }.map { client: Client => (client.name, client) }
+      }
 
-  def orders(fileName: String): Result[(OrderKey, Order)] =
-    tsvLines(fileName)
+  def orders: Result[Order] =
+    tsvLines("orders.txt")
       .collect {
         case name :: deal :: asset :: price :: qty :: Nil =>
           Order(name, OrderType(deal), Asset(asset), price.toLong, qty.toLong)
-      }.map { order: Order => (order.key, order) }
-
-  println(clients("clients.txt").runLog.unsafeRunSync())
-  println(orders("orders.txt").runLog.unsafeRunSync())
+      }
 
 }
