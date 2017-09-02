@@ -1,6 +1,6 @@
 ### Market matching 
 
-The goal here is to implement the mechanism to match incoming order requests from users and make sure that data will be kept in a nice and consistent state.
+The goal here is to implement the mechanism to match incoming order requests from users and make sure that data is kept in a nice and consistent state.
 I will do this in a transactional manner but matching only pairs of exactly opposite orders. For simplicity.
 
 #### Implementation details
@@ -15,7 +15,7 @@ I will do this in a transactional manner but matching only pairs of exactly oppo
 Tests covers all basic scenarios including failed transactions, rollbacked state, mixed successful and failed transactions for a given input data. 
 
 #### Result.txt
-See [results/results.txt]()
+See [results/results.txt](results/results.txt)
 
 ```
 C1       2925    120     172     690     229
@@ -87,7 +87,7 @@ C9       3634    281     274     119     379
 
 ```
 
-For full logs see [results/solver.log]()
+For full logs see [results/solver.log](results/solver.log)
 
 #### TODO
 - Implement partial orders (from left-over orders we can clearly see that we haven't covered that yet)
