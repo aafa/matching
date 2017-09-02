@@ -1,6 +1,7 @@
 import org.scalatest.{FunSpec, MustMatchers}
 import Matcher._
 import Model._
+import matching._
 
 import scala.concurrent.stm.Txn.UncaughtExceptionCause
 import scala.concurrent.stm._
@@ -8,21 +9,9 @@ import scala.util.{Failure, Success, Try}
 
 class MatchingSpec extends FunSpec with MustMatchers {
 
-  implicit class ReachRef(i: Int){
-    def ref: Ref[Long] = Ref(i)
-  }
-
-  implicit class ReachMapRef(m: Map[Asset,Long]){
-    def ref: Ref[Map[Asset,Long]] = Ref(m)
-  }
-
-  def assets(a: Long = 0, b: Long = 0, c: Long = 0, d: Long = 0) = Map[Asset,Long](
-    A -> a, B -> b, C -> c, D -> d
-  ).ref
-
   def genClients = Map(
-    "C1" -> Client("C1", 1000.ref, assets(a = 10,b = 30)),
-    "C2" -> Client("C2", 2000.ref, assets(a = 40,c = 50)),
+    "C1" -> Client("C1", 1000.ref, Asset(a = 10,b = 30).ref),
+    "C2" -> Client("C2", 2000.ref, Asset(a = 40,c = 50).ref),
   )
 
   def genOrder: Order = Order("C1", Buy, A, 10, 5)
@@ -42,8 +31,8 @@ class MatchingSpec extends FunSpec with MustMatchers {
     println(clientMap)
 
     clientMap.toString() must === (Map(
-      "C1" -> Client("C1", (1000 - 100).ref, assets(a = 20,b = 30)),
-      "C2" -> Client("C2", (2000 + 100).ref, assets(a = 30,c = 50)),
+      "C1" -> Client("C1", (1000 - 100).ref, Asset(a = 20,b = 30).ref),
+      "C2" -> Client("C2", (2000 + 100).ref, Asset(a = 30,c = 50).ref),
     ).toString()) // todo implement implicit matcher instead of lame string comparing like that
   }
 

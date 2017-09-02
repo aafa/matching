@@ -5,6 +5,7 @@ import scala.concurrent.stm._
 sealed class FailedOperation(m: String) extends Exception(m)
 case class NotEnoughAssets(order: Order) extends FailedOperation(s"${order.clientName} has not enough assets")
 case class NotEnoughFunds(order: Order)  extends FailedOperation(s"${order.clientName} has not enough funds")
+case object ParsingException  extends FailedOperation("")
 
 object Model {
 
@@ -12,6 +13,14 @@ object Model {
     def opposite: OrderType = this match {
       case Buy  => Sell
       case Sell => Buy
+    }
+  }
+
+  object OrderType{
+    def apply(s: String): OrderType = s match {
+      case "b" => Buy
+      case "s" => Sell
+      case _ => throw ParsingException
     }
   }
 
@@ -27,6 +36,20 @@ object Model {
   case object B extends Asset
   case object C extends Asset
   case object D extends Asset
+
+  object Asset{
+    def apply(s: String): Asset = s match {
+      case "A" => A
+      case "B" => B
+      case "C" => C
+      case "D" => D
+      case _ => throw ParsingException
+    }
+
+    def apply(a: Long = 0, b: Long = 0, c: Long = 0, d: Long = 0): Map[Asset, Money] = Map[Asset,Long](
+      A -> a, B -> b, C -> c, D -> d
+    )
+  }
 
   case class Client(name: ClientKey, // gonna be indexed field
                     money: Ref[Money],
